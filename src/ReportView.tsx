@@ -22,6 +22,7 @@ interface ReportFilters {
     año: string;
     mes: string;
     mesComparativo: string;
+    mesComparativo2: string;
     empresa: string;
     area: string;
 }
@@ -37,6 +38,8 @@ interface TreeNode {
     total: number;
     countComp: number;
     totalComp: number;
+    countComp2: number;
+    totalComp2: number;
     level: number;
     children: TreeNode[];
 }
@@ -83,7 +86,7 @@ const groupData = (items: FinancialRecord[], field: string, defaultValue: string
 };
 
 // Función recursiva para construir la jerarquía combinando ambos datasets
-function buildHierarchy(itemsA: FinancialRecord[], itemsB: FinancialRecord[], level: number): TreeNode[] {
+function buildHierarchy(itemsA: FinancialRecord[], itemsB: FinancialRecord[], itemsC: FinancialRecord[], level: number): TreeNode[] {
     if (level >= LEVELS.length) return [];
 
     const field = LEVELS[level];
@@ -91,9 +94,10 @@ function buildHierarchy(itemsA: FinancialRecord[], itemsB: FinancialRecord[], le
 
     const groupA = groupData(itemsA, field, defaultValue);
     const groupB = groupData(itemsB, field, defaultValue);
+    const groupC = groupData(itemsC, field, defaultValue);
 
     // Obtener todas las claves únicas de ambos datasets
-    const allKeys = new Set([...Object.keys(groupA), ...Object.keys(groupB)]);
+    const allKeys = new Set([...Object.keys(groupA), ...Object.keys(groupB), ...Object.keys(groupC)]);
 
     // Ordenar claves
     const sortedKeys = Array.from(allKeys).sort((a, b) => {
@@ -106,9 +110,11 @@ function buildHierarchy(itemsA: FinancialRecord[], itemsB: FinancialRecord[], le
         .map(key => {
         const childrenA = groupA[key] || [];
         const childrenB = groupB[key] || [];
+        const childrenC = groupC[key] || [];
 
         const totalA = childrenA.reduce((s, i) => s + (Number(i.Valor_de_operacion) || 0), 0);
         const totalB = childrenB.reduce((s, i) => s + (Number(i.Valor_de_operacion) || 0), 0);
+        const totalC = childrenC.reduce((s, i) => s + (Number(i.Valor_de_operacion) || 0), 0);
 
         return {
             name: key,
@@ -116,8 +122,10 @@ function buildHierarchy(itemsA: FinancialRecord[], itemsB: FinancialRecord[], le
             total: totalA,
             countComp: childrenB.length,
             totalComp: totalB,
+            countComp2: childrenC.length,
+            totalComp2: totalC,
             level: level,
-            children: buildHierarchy(childrenA, childrenB, level + 1)
+            children: buildHierarchy(childrenA, childrenB, childrenC, level + 1)
         };
     });
 }
@@ -141,7 +149,7 @@ const compareDependencias = (a: string, b: string) => {
 };
 
 export default function ReportView({ data, onBack }: ReportViewProps) {
-    const [filters, setFilters] = useState<ReportFilters>({ año: '', mes: '', mesComparativo: '', empresa: '', area: '' });
+    const [filters, setFilters] = useState<ReportFilters>({ año: '', mes: '', mesComparativo: '', mesComparativo2: '', empresa: '', area: '' });
     const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
     // Opciones de filtros basadas en datos completos
@@ -173,12 +181,24 @@ export default function ReportView({ data, onBack }: ReportViewProps) {
         });
     }, [data, filters.año, filters.mesComparativo, filters.empresa, filters.area]);
 
+    // Datos filtrados segundo mes comparativo
+    const compData2 = useMemo(() => {
+        if (!filters.mesComparativo2) return [];
+        return data.filter(item => {
+            return (!filters.año || item.AÑO === filters.año)
+                && (item.MES || '').toLowerCase() === filters.mesComparativo2.toLowerCase()
+                && (!filters.empresa || item.Empresa === filters.empresa)
+                && (!filters.area || item.Area_operacion === filters.area);
+        });
+    }, [data, filters.año, filters.mesComparativo2, filters.empresa, filters.area]);
+
     const hasComparison = filters.mesComparativo !== '';
+    const hasComparison2 = filters.mesComparativo2 !== '';
 
     // Construir árbol jerárquico unificado
     const reportTree = useMemo(() => {
-        return buildHierarchy(filteredData, compData, 0);
-    }, [filteredData, compData]);
+        return buildHierarchy(filteredData, compData, compData2, 0);
+    }, [filteredData, compData, compData2]);
 
     const toggleExpand = (path: string) => {
         const newExpanded = new Set(expanded);
@@ -258,10 +278,13 @@ export default function ReportView({ data, onBack }: ReportViewProps) {
         let rowIndex = 0;
 
         // Headers
-        // Headers
-        const headers = hasComparison
-            ? ['DETALLE', 'CANT', `COSTO ${filters.mes?.toUpperCase() || 'MES'}`, 'CANT COMP', `COSTO ${filters.mesComparativo?.toUpperCase()}`]
-            : ['DETALLE', 'CANT', 'COSTO'];
+        const headers = ['DETALLE', 'CANT', `COSTO ${filters.mes?.toUpperCase() || 'MES'}`];
+        if (hasComparison) {
+            headers.push('CANT COMP', `COSTO ${filters.mesComparativo?.toUpperCase()}`);
+        }
+        if (hasComparison2) {
+            headers.push('CANT COMP 2', `COSTO ${filters.mesComparativo2?.toUpperCase()}`);
+        }
 
         // --- SECCIÓN DE RESUMEN (NUEVO) ---
         // 1. Encabezado del Resumen
@@ -286,11 +309,24 @@ export default function ReportView({ data, onBack }: ReportViewProps) {
 
         // 2. Filas del Resumen (Iterar solo nivel 0 - Dependencias)
         reportTree.forEach(node => {
-            const colCount = hasComparison ? 5 : 3;
+            const colCount = headers.length;
+            
+            const rowValues: {val: any, isNum: boolean}[] = [
+                { val: `▼ ${node.name}`, isNum: false },
+                { val: node.count, isNum: false },
+                { val: node.total, isNum: true }
+            ];
+            if (hasComparison) {
+                rowValues.push({ val: node.countComp, isNum: false }, { val: node.totalComp, isNum: true });
+            }
+            if (hasComparison2) {
+                rowValues.push({ val: node.countComp2, isNum: false }, { val: node.totalComp2, isNum: true });
+            }
+
             for (let colIndex = 0; colIndex < colCount; colIndex++) {
                 const cellRef = XLSX.utils.encode_cell({ r: rowIndex, c: colIndex });
-                let value: any;
-                let isNumeric = false;
+                let value = rowValues[colIndex]?.val;
+                let isNumeric = rowValues[colIndex]?.isNum || false;
 
                 // Estilo para las filas de resumen (Negrita, fondo suave)
                 const style = { fill: 'E8F5E9', fontColor: '2C3E50', bold: true, borderColor: 'A5D6A7' };
@@ -305,12 +341,6 @@ export default function ReportView({ data, onBack }: ReportViewProps) {
                         right: { style: 'thin', color: { rgb: style.borderColor } }
                     }
                 };
-
-                if (colIndex === 0) value = `▼ ${node.name}`; // Agregamos el ícono como pidió el usuario
-                else if (colIndex === 1) value = node.count;
-                else if (colIndex === 2) { value = node.total; isNumeric = true; }
-                else if (colIndex === 3) value = node.countComp;
-                else if (colIndex === 4) { value = node.totalComp; isNumeric = true; }
 
                 if (isNumeric) {
                     ws[cellRef] = { v: value, t: 'n', s: cellStyle, z: '"$"#,##0' };
@@ -337,26 +367,24 @@ export default function ReportView({ data, onBack }: ReportViewProps) {
         const traverse = (nodes: TreeNode[], indent: number) => {
             nodes.forEach(node => {
                 const prefix = '    '.repeat(indent);
-                const colCount = hasComparison ? 5 : 3;
+                const colCount = headers.length;
+                
+                const rowValues: {val: any, isNum: boolean}[] = [
+                    { val: `${prefix}${node.name}`, isNum: false },
+                    { val: node.level === 3 ? node.count : '', isNum: false },
+                    { val: node.total, isNum: true }
+                ];
+                if (hasComparison) {
+                    rowValues.push({ val: node.level === 3 ? node.countComp : '', isNum: false }, { val: node.totalComp, isNum: true });
+                }
+                if (hasComparison2) {
+                    rowValues.push({ val: node.level === 3 ? node.countComp2 : '', isNum: false }, { val: node.totalComp2, isNum: true });
+                }
 
                 for (let colIndex = 0; colIndex < colCount; colIndex++) {
                     const cellRef = XLSX.utils.encode_cell({ r: rowIndex, c: colIndex });
-                    let value: any;
-                    let isNumeric = false;
-
-                    if (colIndex === 0) {
-                        value = `${prefix}${node.name}`;
-                    } else if (colIndex === 1) {
-                        value = node.level === 3 ? node.count : '';
-                    } else if (colIndex === 2) {
-                        value = node.total;
-                        isNumeric = true;
-                    } else if (colIndex === 3) {
-                        value = node.level === 3 ? node.countComp : '';
-                    } else if (colIndex === 4) {
-                        value = node.totalComp;
-                        isNumeric = true;
-                    }
+                    let value = rowValues[colIndex]?.val;
+                    let isNumeric = rowValues[colIndex]?.isNum || false;
 
                     ws[cellRef] = createCell(value, node.level, isNumeric, colIndex);
                 }
@@ -372,13 +400,14 @@ export default function ReportView({ data, onBack }: ReportViewProps) {
         traverse(reportTree, 0);
 
         // Establecer rango
-        const colCount = hasComparison ? 5 : 3;
+        const colCount = headers.length;
         ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rowIndex - 1, c: colCount - 1 } });
 
         // Ajustar anchos de columna
-        ws['!cols'] = hasComparison
-            ? [{ wch: 65 }, { wch: 8 }, { wch: 18 }, { wch: 10 }, { wch: 18 }]
-            : [{ wch: 65 }, { wch: 8 }, { wch: 18 }];
+        const cols = [{ wch: 65 }, { wch: 8 }, { wch: 18 }];
+        if (hasComparison) cols.push({ wch: 10 }, { wch: 18 });
+        if (hasComparison2) cols.push({ wch: 10 }, { wch: 18 });
+        ws['!cols'] = cols;
 
         // Altura de filas
         const rowHeights: any[] = [];
@@ -442,6 +471,16 @@ export default function ReportView({ data, onBack }: ReportViewProps) {
                                     <span className={`${style.font} w-28 text-right tabular-nums text-[#e67e22]`}>{formatCurrency(node.totalComp)}</span>
                                 </>
                             )}
+
+                            {/* Mes Comparativo 2 */}
+                            {hasComparison2 && (
+                                <>
+                                    <span className="w-4" />
+                                    {node.level === 3 && <span className="text-xs w-14 text-center text-[#8B5CF6]">{node.countComp2}</span>}
+                                    {node.level < 3 && <span className="w-14" />}
+                                    <span className={`${style.font} w-28 text-right tabular-nums text-[#8B5CF6]`}>{formatCurrency(node.totalComp2)}</span>
+                                </>
+                            )}
                         </div>
                     </div>
                     {hasChildren && isExpanded && renderTree(node.children, path)}
@@ -452,6 +491,7 @@ export default function ReportView({ data, onBack }: ReportViewProps) {
 
     const totalGeneral = reportTree.reduce((s, n) => s + n.total, 0);
     const totalComp = reportTree.reduce((s, n) => s + n.totalComp, 0);
+    const totalComp2 = reportTree.reduce((s, n) => s + n.totalComp2, 0);
 
     return (
         <div className="h-screen flex flex-col bg-[#e8eef5] dark:bg-slate-950 font-sans overflow-hidden transition-colors duration-300">
@@ -480,6 +520,7 @@ export default function ReportView({ data, onBack }: ReportViewProps) {
                     <div className="px-4 py-2 rounded-xl bg-[#e8eef5] dark:bg-slate-800 text-right shadow-[inset_4px_4px_8px_#c5cdd8,inset_-4px_-4px_8px_#ffffff] dark:shadow-none dark:border dark:border-slate-700/50">
                         <div className="text-xl font-black text-[#27ae60] dark:text-emerald-400 tabular-nums">{formatCurrency(totalGeneral)}</div>
                         {hasComparison && <div className="text-sm font-bold text-[#e67e22] dark:text-amber-400">{formatCurrency(totalComp)}</div>}
+                        {hasComparison2 && <div className="text-sm font-bold text-[#8B5CF6] dark:text-violet-400">{formatCurrency(totalComp2)}</div>}
                     </div>
                     <button
                         onClick={exportToExcel}
@@ -523,7 +564,18 @@ export default function ReportView({ data, onBack }: ReportViewProps) {
                             className="w-full rounded-lg px-3 py-2 text-[11px] font-semibold text-[#e67e22] dark:text-amber-400 bg-[#fef3c7] dark:bg-amber-900/30 outline-none shadow-[inset_2px_2px_4px_#f59e0b33,inset_-2px_-2px_4px_#ffffff] dark:shadow-none dark:border dark:border-amber-900/50"
                         >
                             <option value="">Sin comparar</option>
-                            {options.meses.filter(m => m !== filters.mes).map(m => <option key={m} value={m}>{m.toUpperCase()}</option>)}
+                            {options.meses.filter(m => m !== filters.mes && m !== filters.mesComparativo2).map(m => <option key={m} value={m}>{m.toUpperCase()}</option>)}
+                        </select>
+                    </div>
+                    <div className="flex-1 max-w-[140px]">
+                        <label className="block text-[9px] font-bold text-[#8B5CF6] dark:text-violet-400 uppercase mb-1">MES COMP. 2</label>
+                        <select
+                            value={filters.mesComparativo2}
+                            onChange={(e) => setFilters({ ...filters, mesComparativo2: e.target.value })}
+                            className="w-full rounded-lg px-3 py-2 text-[11px] font-semibold text-[#8B5CF6] dark:text-violet-400 bg-[#f3e8ff] dark:bg-violet-900/30 outline-none shadow-[inset_2px_2px_4px_#8b5cf633,inset_-2px_-2px_4px_#ffffff] dark:shadow-none dark:border dark:border-violet-900/50"
+                        >
+                            <option value="">Sin comparar</option>
+                            {options.meses.filter(m => m !== filters.mes && m !== filters.mesComparativo).map(m => <option key={m} value={m}>{m.toUpperCase()}</option>)}
                         </select>
                     </div>
                     <div className="flex-1 max-w-[160px]">
@@ -572,6 +624,13 @@ export default function ReportView({ data, onBack }: ReportViewProps) {
                             <span className="w-28 text-right text-[#fcd34d]">COSTO {filters.mesComparativo.toUpperCase()}</span>
                         </>
                     )}
+                    {hasComparison2 && (
+                        <>
+                            <span className="w-4" />
+                            <span className="w-14 text-center text-[#c4b5fd]">CANT</span>
+                            <span className="w-28 text-right text-[#c4b5fd]">COSTO {filters.mesComparativo2.toUpperCase()}</span>
+                        </>
+                    )}
                 </div>
             </div>
 
@@ -598,6 +657,12 @@ export default function ReportView({ data, onBack }: ReportViewProps) {
                         <div className="text-right px-4 py-2 rounded-xl bg-[#fef3c7] dark:bg-amber-900/20 shadow-[inset_3px_3px_6px_#f59e0b33,inset_-3px_-3px_6px_#ffffff] dark:shadow-none dark:border dark:border-amber-900/50">
                             <span className="text-xs text-[#d97706] dark:text-amber-500 mr-2">TOTAL {filters.mesComparativo.toUpperCase()}:</span>
                             <span className="text-lg font-black text-[#e67e22] dark:text-amber-400">{formatCurrency(totalComp)}</span>
+                        </div>
+                    )}
+                    {hasComparison2 && (
+                        <div className="text-right px-4 py-2 rounded-xl bg-[#f3e8ff] dark:bg-violet-900/20 shadow-[inset_3px_3px_6px_#8b5cf633,inset_-3px_-3px_6px_#ffffff] dark:shadow-none dark:border dark:border-violet-900/50">
+                            <span className="text-xs text-[#7c3aed] dark:text-violet-500 mr-2">TOTAL {filters.mesComparativo2.toUpperCase()}:</span>
+                            <span className="text-lg font-black text-[#8B5CF6] dark:text-violet-400">{formatCurrency(totalComp2)}</span>
                         </div>
                     )}
                 </div>
