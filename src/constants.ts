@@ -47,6 +47,13 @@ export const HEADER_MAP: Record<string, string> = {
     'MES': 'MES',
     'AÑO': 'AÑO',
     'Año': 'AÑO',
+    'Horas Máquina Laboradas': 'Horas_Maquina_Laboradas',
+    'Horas Maquina Laboradas': 'Horas_Maquina_Laboradas',
+    'HORAS MAQUINA LABORADAS': 'Horas_Maquina_Laboradas',
+    'Horas Máquina': 'Horas_Maquina_Laboradas',
+    'Horas Maquina': 'Horas_Maquina_Laboradas',
+    'Horas': 'Horas_Maquina_Laboradas',
+    'Cantidad': 'Horas_Maquina_Laboradas',
 };
 
 export const NUMERIC_FIELDS = [
@@ -55,7 +62,8 @@ export const NUMERIC_FIELDS = [
     'Valor_de_operacion',
     'Retencion',
     'Otros_descuentos',
-    'Neto_a_pagar'
+    'Neto_a_pagar',
+    'Horas_Maquina_Laboradas'
 ];
 
 export const CHART_TOOLTIP_STYLE = {

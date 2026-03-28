@@ -41,6 +41,7 @@ export interface FinancialRecord {
     Fuente: string;
     MES: string;
     AÑO: string;
+    Horas_Maquina_Laboradas?: number;
 }
 
 export interface Filters {

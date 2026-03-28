@@ -1,11 +1,8 @@
 import { useState, useMemo, useEffect } from 'react';
-import {
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-    Cell
-} from 'recharts';
-import { RefreshCw, X, AlertTriangle, Filter, FileText, Calendar, Search } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { RefreshCw, X, AlertTriangle, Filter, FileText, Calendar, Search, Calculator } from 'lucide-react';
 import ReportView from './ReportView';
-
+import RellenoPlantaView from './components/RellenoPlantaView';
 import type { FinancialRecord, Filters } from './types';
 import { CSV_URL, MESES_ORDEN, CHART_TOOLTIP_STYLE } from './constants';
 import { parseCSVWithPapa, buildPeriodMatrix, formatCurrency } from './utils';
@@ -21,7 +18,7 @@ export default function App() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [filters, setFilters] = useState<Filters>({ año: '', mes: '', empresa: '', area: '', grupo: '', rubro: '', subrubro: '', dependencia: '' });
-    const [view, setView] = useState<'dashboard' | 'report'>('dashboard');
+    const [view, setView] = useState<'dashboard' | 'report' | 'relleno'>('dashboard');
     const { theme } = useTheme();
 
     const chartTheme = {
@@ -48,7 +45,6 @@ export default function App() {
 
             const csvText = await response.text();
 
-            // Check if response is HTML (login page redirect)
             if (csvText.trim().toLowerCase().startsWith('<!doctype html') || csvText.includes('<html')) {
                 throw new Error('La URL devolvió HTML en lugar de CSV. Verifica que el Google Sheet esté "Publicado en la web" (Archivo > Compartir > Publicar en la web > CSV).');
             }
@@ -73,7 +69,7 @@ export default function App() {
     const clearFilters = () => setFilters({ año: '', mes: '', empresa: '', area: '', grupo: '', rubro: '', subrubro: '', dependencia: '' });
 
     const handleChartClick = (field: keyof Filters, value: string) => {
-        setFilters(prev => ({ ...prev, [field]: prev[field] === value ? '' : value }));
+        setFilters((prev: Filters) => ({ ...prev, [field]: prev[field] === value ? '' : value }));
     };
 
     const filteredData = useMemo(() => {
@@ -176,20 +172,20 @@ export default function App() {
     }, [filteredData]);
 
     if (loading) return (
-        <div className="flex h-screen items-center justify-center bg-slate-50 text-slate-600 flex-col gap-4 font-sans">
+        <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-600 flex-col gap-4 font-sans transition-colors duration-300">
             <RefreshCw className="animate-spin text-indigo-600" size={32} />
             <p className="font-medium text-sm">Sincronizando datos...</p>
         </div>
     );
 
     if (error) return (
-        <div className="flex h-screen items-center justify-center bg-slate-50 text-slate-800 flex-col gap-6 p-8 text-center font-sans">
-            <div className="p-4 bg-red-50 rounded-full">
+        <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-800 flex-col gap-6 p-8 text-center font-sans transition-colors duration-300">
+            <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-full">
                 <AlertTriangle size={32} className="text-red-500" />
             </div>
             <div className="space-y-2">
-                <h2 className="text-lg font-bold">Error de conexión</h2>
-                <p className="text-slate-500 max-w-md text-sm leading-relaxed">{error}</p>
+                <h2 className="text-lg font-bold dark:text-white">Error de conexión</h2>
+                <p className="text-slate-500 dark:text-slate-400 max-w-md text-sm leading-relaxed">{error}</p>
             </div>
             <button
                 onClick={fetchSheetData}
@@ -204,6 +200,10 @@ export default function App() {
 
     if (view === 'report') {
         return <ReportView data={data} onBack={() => setView('dashboard')} />;
+    }
+
+    if (view === 'relleno') {
+        return <RellenoPlantaView data={filteredData} filters={filters} onBack={() => setView('dashboard')} />;
     }
 
     return (
@@ -255,10 +255,18 @@ export default function App() {
 
                         <button
                             onClick={() => setView('report')}
-                            className="flex items-center gap-2 bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-sm transition-all border border-slate-900 dark:border-slate-700"
+                            className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-sm transition-all border border-slate-200 dark:border-slate-700"
                         >
                             <FileText size={14} />
-                            Ver Reporte Detallado
+                            Reporte Detallado
+                        </button>
+
+                        <button
+                            onClick={() => setView('relleno')}
+                            className="flex items-center gap-2 bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-sm transition-all border border-slate-900 dark:border-slate-700"
+                        >
+                            <Calculator size={14} />
+                            Relleno y Planta
                         </button>
                     </div>
                 </div>
@@ -282,7 +290,6 @@ export default function App() {
             </div>
 
             <main className="flex-1 overflow-auto px-6 pb-6 space-y-6">
-
                 <DataMatrix
                     title="Empresa"
                     icon={<Search size={14} className="text-blue-500" />}
